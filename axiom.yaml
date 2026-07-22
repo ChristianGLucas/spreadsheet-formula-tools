@@ -1,0 +1,116 @@
+name: christiangeorgelucas/spreadsheet-formula-tools
+version: 0.1.0
+language: typescript
+description: >
+    Parse and evaluate Excel/Google-Sheets-style formulas — SUM, VLOOKUP, IF,
+    date/text/statistical functions, and financial functions (PMT, FV, NPV,
+    IRR, RATE, and more) — against a caller-supplied cell context, returning
+    the computed value. Wraps fast-formula-parser (MIT) for Excel-grammar
+    parsing and its ~280 built-in functions, plus a bridge into
+    @formulajs/formulajs (MIT) for the financial-function family
+    fast-formula-parser does not implement. Deterministic and stateless: no
+    network, filesystem, or persisted workbook state — every cell value a
+    formula needs is supplied directly in the request. A formula that
+    legitimately evaluates to an Excel error (e.g. "1/0") is reported as
+    that error value, not a failure; a node only reports failure for a
+    genuine syntax error or an input exceeding a bound. Field names for
+    addressed cells (row, col, type, string_value/number_value/bool_value)
+    deliberately match christiangeorgelucas/office-tools' Cell message, so a
+    GridResult read from a real workbook can feed directly into a formula's
+    context.
+nodes:
+    - name: Evaluate
+      input: EvaluateRequest
+      output: EvaluateResult
+      description: >
+          Evaluate one Excel/Google-Sheets-style formula against a
+          caller-supplied cell context, returning the computed value. A
+          leading "=" is optional and stripped automatically. Cells absent
+          from the context are treated as blank, exactly like an empty
+          Excel cell. Supports scalar results (number/string/boolean),
+          array results (e.g. TRANSPOSE(A1:B2) or an array constant like
+          {1,2;3,4}), and Excel error-value results (#DIV/0!, #N/A, #REF!,
+          etc. — reported as ok=true with scalar.type=="ERROR", since that
+          is the correct, expected result of evaluating that formula, not a
+          failure of this node). ok=false only for a genuine syntax error or
+          a bound violation (formula over 5,000 characters, over 200 levels
+          of paren/brace nesting, or a context supplying over 20,000 cells).
+    - name: EvaluateBatch
+      input: EvaluateBatchRequest
+      output: EvaluateBatchResult
+      description: >
+          Evaluate up to 500 formulas against the SAME cell context in one
+          call — e.g. every formula cell in a sheet — building the context
+          once instead of resending it per formula. Results are returned in
+          the same order as the input formulas; each has its own
+          independent ok/error exactly as if Evaluate had been called once
+          per formula, so one bad formula in the batch does not affect the
+          others' results.
+    - name: ValidateFormula
+      input: ValidateFormulaRequest
+      output: ValidateFormulaResult
+      description: >
+          Check whether a formula is syntactically well-formed and callable
+          by Evaluate — no cell context needed (references resolve to blank
+          for this check). A leading "=" is optional and stripped
+          automatically. valid=false covers both grammar-level syntax
+          errors (e.g. an unbalanced paren) and a call to a function this
+          package does not implement; error_line/error_column report the
+          parser's 1-based position when it supplies one, and are both 0
+          otherwise. A formula that is syntactically fine but would
+          evaluate to an Excel error value is still valid=true — Evaluate
+          is where that result is reported, not this node.
+    - name: ExtractReferences
+      input: ExtractReferencesRequest
+      output: ExtractReferencesResult
+      description: >
+          List every cell/range a formula reads and every function name it
+          calls, WITHOUT evaluating it — no cell context needed beyond an
+          optional default sheet name for unqualified references. Useful
+          for building a dependency graph before fetching cell data (e.g.
+          deciding which christiangeorgelucas/office-tools ReadRange calls
+          to make) or for auditing what a formula touches. A leading "=" is
+          optional and stripped automatically. ok=false only for a formula
+          this package cannot parse at all.
+    - name: ListSupportedFunctions
+      input: ListSupportedFunctionsRequest
+      output: ListSupportedFunctionsResult
+      description: >
+          List every Excel-style function Evaluate/EvaluateBatch/
+          ExtractReferences recognize in a formula — fast-formula-parser's
+          ~280 built-in functions (MATH, STATISTICAL, TEXT, DATE_TIME,
+          LOOKUP, LOGICAL, ENGINEERING, INFORMATION categories) plus this
+          package's FINANCIAL-category bridge (PMT, FV, PV, NPV, IRR, RATE,
+          NPER, IPMT, PPMT, CUMIPMT, CUMPRINC, SLN, SYD, DB, DDB, XIRR,
+          XNPV, MIRR, FVSCHEDULE, ISPMT, DOLLARDE, DOLLARFR, EFFECT,
+          NOMINAL, PDURATION, RRI). Takes no parameters. Useful for an
+          agent to confirm a function is supported before generating a
+          formula that calls it.
+    - name: FormatValue
+      input: FormatValueRequest
+      output: FormatValueResult
+      description: >
+          Render a raw value as Excel would display it under a given
+          number-format code — e.g. "#,##0.00" on 1234.5 -> "1,234.50",
+          "yyyy-mm-dd" on the date serial 45000 -> "2023-03-15", "0.00%" on
+          0.256 -> "25.60%". Uses the same SSF (SpreadsheetFormat) engine
+          fast-formula-parser itself uses for Excel-compatible number
+          formatting. value.type must be NUMBER (including Excel date/time
+          serial numbers) or STRING; BOOLEAN/BLANK/ERROR values return a
+          structured error, since Excel number formats apply to numbers and
+          text, not those.
+    - name: ConvertCellReference
+      input: ConvertCellReferenceRequest
+      output: ConvertCellReferenceResult
+      description: >
+          Convert between A1-notation text (e.g. "B7", "B2:D10",
+          "Sheet1!B2:D10") and 0-based row/col indices, in either
+          direction. Parse mode: supply a1_ref to get its sheet + row/col
+          (+ range end) back. Format mode: supply row/col (a1_ref empty) —
+          plus is_range/to_row/to_col for a range, and sheet to prefix it —
+          to render the equivalent A1-notation string. a1_ref takes
+          precedence when both are given. Complements ExtractReferences
+          (which returns 0-based indices) when a caller needs the A1 text
+          form instead, e.g. for display or for
+          christiangeorgelucas/office-tools' A1-addressed ReadCell/ReadRange
+          nodes.

@@ -1,0 +1,247 @@
+// This file defines the data contracts (messages) for your Axiom package.
+// Every node's --input and --output refers to a message defined here.
+//
+// Run `axiom create message <Name>` to scaffold a new message below.
+// Run `axiom generate` to compile these definitions into language bindings in gen/.
+//
+// DOCUMENTATION
+//   Comments written directly above a message or field declaration are extracted
+//   automatically at publish time and shown in the Axiom registry as documentation.
+//   Write your descriptions there — no separate doc files needed.
+//
+//   Leading comment  (no blank line before the declaration) → registry description ✓
+//   Detached comment (blank line before the declaration)    → ignored by registry  ✗
+//
+// This file is yours to edit. Axiom only appends new message blocks — it never
+// overwrites or removes content you have written.
+
+syntax = "proto3";
+
+package christiangeorgelucas.spreadsheet_formula_tools;
+
+// One addressed spreadsheet cell's typed value — 0-based row/col plus an
+// optional sheet name, and exactly one of string_value/number_value/bool_value
+// populated per `type`. Field names/shape deliberately mirror
+// christiangeorgelucas/office-tools' `Cell` message (row, col, type,
+// string_value/number_value/bool_value) so a GridResult read from a real
+// workbook can be fed into a formula's context with no reshaping — only
+// office-tools' `ref`/`formula`/`is_date`/`formatted_value`/`error_value`
+// fields are dropped since they aren't needed to supply a value.
+message CellValue {
+  // 0-based row index.
+  int32 row = 1;
+  // 0-based column index.
+  int32 col = 2;
+  // Sheet this cell belongs to. Empty means "the context's default sheet"
+  // (FormulaContext.sheet).
+  string sheet = 3;
+  // Which value field is populated: "NUMBER", "STRING", "BOOLEAN", or
+  // "BLANK" (an explicitly empty cell — distinct from simply omitting the
+  // cell from the context, which is also treated as blank).
+  string type = 4;
+  string string_value = 5;
+  double number_value = 6;
+  bool bool_value = 7;
+}
+
+// The formula-evaluation context: every cell value a formula (or the cells
+// it references) might need, plus where the formula itself "lives" — needed
+// for position-sensitive functions like ROW()/COLUMN(). Cells not present in
+// `cells` are treated as blank (0 in numeric context, "" in text context),
+// exactly like an empty Excel cell.
+message FormulaContext {
+  // Bounded to 20,000 cells — reject oversized contexts rather than build a
+  // huge in-memory sparse grid per request.
+  repeated CellValue cells = 1;
+  // 0-based row/col the formula itself occupies; used by ROW()/COLUMN() with
+  // no arguments and similar position-relative functions. Defaults to 0,0.
+  int32 position_row = 2;
+  int32 position_col = 3;
+  // Default sheet name for the formula and for any cell/range reference in
+  // it (and in `cells`) that doesn't explicitly qualify a sheet. Defaults to
+  // "Sheet1" when empty.
+  string sheet = 4;
+}
+
+// Request to evaluate one formula string against a cell context.
+message EvaluateRequest {
+  // The formula text. A single leading "=" (as pasted from Excel/Sheets) is
+  // stripped automatically; everything else is passed through as-is.
+  // Bounded to 5,000 characters.
+  string formula = 1;
+  FormulaContext context = 2;
+}
+
+// A single typed formula result value — the scalar payload shape shared by
+// EvaluateResult and by each element of an array result.
+message ScalarValue {
+  // "NUMBER", "STRING", "BOOLEAN", "BLANK", or "ERROR". For ERROR,
+  // string_value carries the Excel error code text, e.g. "#DIV/0!", "#N/A",
+  // "#REF!", "#VALUE!", "#NAME?", "#NUM!", "#NULL!".
+  string type = 1;
+  double number_value = 2;
+  string string_value = 3;
+  bool bool_value = 4;
+}
+
+// Result of evaluating one formula.
+message EvaluateResult {
+  // False ONLY when this node could not evaluate the formula at all — a
+  // syntax error, or input that violated a bound (formula/context too
+  // large). A formula that legitimately evaluates to an Excel error value
+  // (e.g. 1/0) is still ok=true, with scalar.type=="ERROR" — that is the
+  // correct, expected result of evaluating that formula, exactly as Excel
+  // would show it in the cell rather than crash.
+  bool ok = 1;
+  // True when the formula produced a multi-cell array result (e.g.
+  // TRANSPOSE(A1:B2) or an array constant like {1,2;3,4}); array_values
+  // (row-major) + array_rows/array_cols are populated instead of `scalar`.
+  bool is_array = 2;
+  ScalarValue scalar = 3;
+  repeated ScalarValue array_values = 4;
+  int32 array_rows = 5;
+  int32 array_cols = 6;
+  // Structured message when ok=false.
+  string error = 7;
+  // Machine-readable code when ok=false: "PARSE_ERROR" (malformed formula
+  // syntax) or "INVALID_INPUT" (formula/context exceeded a bound, or the
+  // context itself was malformed).
+  string error_code = 8;
+}
+
+// Evaluate several formulas against the SAME cell context in one call —
+// e.g. every formula cell in a sheet — without resending the context or
+// making one round trip per formula.
+message EvaluateBatchRequest {
+  // Bounded to 500 formulas per call.
+  repeated string formulas = 1;
+  FormulaContext context = 2;
+}
+
+// Results in the same order as the request's `formulas`.
+message EvaluateBatchResult {
+  repeated EvaluateResult results = 1;
+}
+
+// Check whether a formula is syntactically well-formed, without evaluating
+// it — no cell context needed.
+message ValidateFormulaRequest {
+  string formula = 1;
+}
+
+message ValidateFormulaResult {
+  bool valid = 1;
+  // Parser error message when valid=false; empty otherwise.
+  string error = 2;
+  // 1-based line/column the parser stopped at, when the underlying parser
+  // supplies one; both 0 when it does not.
+  int32 error_line = 3;
+  int32 error_column = 4;
+}
+
+// One cell reference a formula depends on.
+message CellRef {
+  string sheet = 1;
+  int32 row = 2;
+  int32 col = 3;
+}
+
+// One range reference a formula depends on (inclusive bounds, 0-based).
+message RangeRef {
+  string sheet = 1;
+  int32 from_row = 2;
+  int32 from_col = 3;
+  int32 to_row = 4;
+  int32 to_col = 5;
+}
+
+// Request to list every cell/range a formula reads and every function name
+// it calls, WITHOUT evaluating it — useful for building a dependency graph
+// before fetching cell data, e.g. to know which office-tools ReadRange calls
+// to make.
+message ExtractReferencesRequest {
+  string formula = 1;
+  // Default sheet for unqualified references in the formula.
+  string sheet = 2;
+}
+
+message ExtractReferencesResult {
+  bool ok = 1;
+  repeated CellRef cell_refs = 2;
+  repeated RangeRef range_refs = 3;
+  // Distinct function names the formula calls, e.g. ["SUM", "IF"].
+  repeated string function_names = 4;
+  // Structured message when ok=false (a syntax error prevents extraction).
+  string error = 5;
+}
+
+// (No fields needed — ListSupportedFunctions takes no parameters.)
+message ListSupportedFunctionsRequest {
+}
+
+// One supported Excel-style function.
+message FunctionInfo {
+  // Upper-case Excel function name, e.g. "VLOOKUP".
+  string name = 1;
+  // "MATH", "STATISTICAL", "TEXT", "DATE_TIME", "LOOKUP", "FINANCIAL",
+  // "LOGICAL", "ENGINEERING", "INFORMATION", or "OTHER".
+  string category = 2;
+}
+
+// The full catalog of Excel-style functions this package's Evaluate/
+// EvaluateBatch nodes support in a formula.
+message ListSupportedFunctionsResult {
+  repeated FunctionInfo functions = 1;
+  int32 count = 2;
+}
+
+// Request to render a raw value as Excel would display it under a given
+// number-format code.
+message FormatValueRequest {
+  // Excel number-format code, e.g. "#,##0.00", "yyyy-mm-dd", "0.00%",
+  // "$#,##0.00;[RED]-$#,##0.00".
+  string format_code = 1;
+  // The value to format. type must be "NUMBER" or "STRING" (dates are
+  // NUMBER — Excel's date serial number, e.g. 45000). BOOLEAN/BLANK/ERROR
+  // are rejected with a structured error.
+  ScalarValue value = 2;
+}
+
+message FormatValueResult {
+  bool ok = 1;
+  string formatted = 2;
+  string error = 3;
+}
+
+// Request to convert between A1-notation text (e.g. "B7", "Sheet1!B2:D10")
+// and 0-based row/col indices. Supply EITHER `a1_ref` (parse mode) OR
+// `row`/`col` (format mode) — whichever is non-empty/set determines the
+// mode; a1_ref takes precedence when both are given.
+message ConvertCellReferenceRequest {
+  // Parse mode: an A1-notation cell or range reference, optionally sheet-
+  // qualified, e.g. "B7", "B2:D10", "Sheet1!B7".
+  string a1_ref = 1;
+  // Format mode: 0-based row/col (and optionally to_row/to_col for a range)
+  // to render as an A1-notation string.
+  int32 row = 2;
+  int32 col = 3;
+  bool is_range = 4;
+  int32 to_row = 5;
+  int32 to_col = 6;
+  // Format mode: sheet name to prefix, e.g. "Sheet1!B7"; empty omits it.
+  string sheet = 7;
+}
+
+message ConvertCellReferenceResult {
+  bool ok = 1;
+  // Parse-mode outputs.
+  string sheet = 2;
+  int32 row = 3;
+  int32 col = 4;
+  bool is_range = 5;
+  int32 to_row = 6;
+  int32 to_col = 7;
+  // Format-mode output: the rendered A1-notation string.
+  string a1_ref = 8;
+  string error = 9;
+}

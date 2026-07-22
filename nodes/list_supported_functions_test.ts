@@ -22,6 +22,27 @@ describe('ListSupportedFunctions', () => {
     expect(byName.get('IRR')).toBe('FINANCIAL');
     expect(byName.get('DATE')).toBe('DATE_TIME');
     expect(byName.get('CONCATENATE')).toBe('TEXT');
+    // Regression coverage for a categorization bug found during review: an
+    // earlier prefix-matching implementation put MINUTE under STATISTICAL
+    // (an unanchored "MIN" prefix collision) and put every modern dotted
+    // statistical function (NORM.DIST, BINOM.DIST, ...) and DOLLARDE/
+    // DOLLARFR under the wrong category (an unanchored bare "N"/"DOLLAR"
+    // prefix collision).
+    expect(byName.get('MINUTE')).toBe('DATE_TIME');
+    expect(byName.get('NORM.DIST')).toBe('STATISTICAL');
+    expect(byName.get('NORM.S.INV')).toBe('STATISTICAL');
+    expect(byName.get('NEGBINOM.DIST')).toBe('STATISTICAL');
+    expect(byName.get('BINOM.DIST')).toBe('STATISTICAL');
+    expect(byName.get('DOLLARDE')).toBe('FINANCIAL');
+    expect(byName.get('DOLLARFR')).toBe('FINANCIAL');
+    expect(byName.get('DOLLAR')).toBe('TEXT');
+    // Only genuinely category-less functions (Excel's own "Web" functions,
+    // which don't fit any of MATH/STATISTICAL/TEXT/DATE_TIME/LOOKUP/
+    // FINANCIAL/LOGICAL/ENGINEERING/INFORMATION) should land in OTHER —
+    // every other name in the catalog was hand-classified into a real
+    // category. A name appearing here unexpectedly means it was missed.
+    const otherNames = functions.filter((f) => f.getCategory() === 'OTHER').map((f) => f.getName());
+    expect(otherNames.sort()).toEqual(['ENCODEURL', 'WEBSERVICE']);
 
     // No duplicate names.
     const names = functions.map((f) => f.getName());

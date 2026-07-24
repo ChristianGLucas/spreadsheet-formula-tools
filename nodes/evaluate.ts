@@ -17,8 +17,8 @@ import {
  * cell context, returning the computed value. A leading "=" is optional and
  * stripped automatically. Cells not present in the context are treated as
  * blank, exactly like an empty Excel cell. ok=false only for a genuine
- * parse failure or a bound violation (formula/context too large) — a
- * formula that legitimately evaluates to an Excel error (e.g. 1/0) is
+ * parse failure or malformed input — a formula that legitimately
+ * evaluates to an Excel error (e.g. 1/0) is
  * still ok=true with scalar.type=="ERROR", the correct result Excel itself
  * would show.
  *

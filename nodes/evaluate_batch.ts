@@ -2,7 +2,6 @@ import { EvaluateBatchRequest, EvaluateBatchResult, EvaluateResult } from '../ge
 import { AxiomContext } from '../gen/axiomContext';
 import {
   FormulaInputError,
-  MAX_BATCH_FORMULAS,
   buildCellIndex,
   checkFormulaBounds,
   createParser,
@@ -17,21 +16,14 @@ import {
  * once instead of once per formula. Results are returned in the same order
  * as the input formulas; one formula's failure does not affect the others
  * (each result has its own independent ok/error, exactly like calling
- * Evaluate once per formula). Bounded to 500 formulas per call.
+ * Evaluate once per formula). No limit on the number of formulas per call
+ * — the platform bounds payload size, not this node.
  *
  * @param ax - Platform context: ax.log for logging, ax.secrets for secrets.
  */
 export function evaluateBatch(ax: AxiomContext, input: EvaluateBatchRequest): EvaluateBatchResult {
   const out = new EvaluateBatchResult();
   const formulas = input.getFormulasList();
-  if (formulas.length > MAX_BATCH_FORMULAS) {
-    const err = new EvaluateResult();
-    err.setOk(false);
-    err.setErrorCode('INVALID_INPUT');
-    err.setError(`batch supplies ${formulas.length} formulas, exceeding the maximum of ${MAX_BATCH_FORMULAS}`);
-    out.setResultsList([err]);
-    return out;
-  }
 
   const context = input.getContext();
   const defaultSheet = context?.getSheet() || 'Sheet1';

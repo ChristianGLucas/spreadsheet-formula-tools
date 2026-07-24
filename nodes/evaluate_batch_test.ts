@@ -39,15 +39,16 @@ describe('EvaluateBatch', () => {
     expect(results[2].getScalar()?.getNumberValue()).toBe(11);
   });
 
-  it('rejects a batch over the 500-formula cap without evaluating any of it', () => {
+  it('evaluates a large batch without crashing (no element-count limit)', () => {
+    const n = 501;
     const input = new EvaluateBatchRequest();
-    input.setFormulasList(Array.from({ length: 501 }, () => '1+1'));
+    input.setFormulasList(Array.from({ length: n }, () => '1+1'));
     input.setContext(context([]));
     const result = evaluateBatch(testContext, input);
     const results = result.getResultsList();
-    expect(results).toHaveLength(1);
-    expect(results[0].getOk()).toBe(false);
-    expect(results[0].getErrorCode()).toBe('INVALID_INPUT');
+    expect(results).toHaveLength(n);
+    expect(results.every((r) => r.getOk())).toBe(true);
+    expect(results.every((r) => r.getScalar()?.getNumberValue() === 2)).toBe(true);
   });
 
   it('returns an empty results list for an empty batch', () => {

@@ -50,8 +50,6 @@ message CellValue {
 // `cells` are treated as blank (0 in numeric context, "" in text context),
 // exactly like an empty Excel cell.
 message FormulaContext {
-  // Bounded to 20,000 cells — reject oversized contexts rather than build a
-  // huge in-memory sparse grid per request.
   repeated CellValue cells = 1;
   // 0-based row/col the formula itself occupies; used by ROW()/COLUMN() with
   // no arguments and similar position-relative functions. Defaults to 0,0.
@@ -67,7 +65,6 @@ message FormulaContext {
 message EvaluateRequest {
   // The formula text. A single leading "=" (as pasted from Excel/Sheets) is
   // stripped automatically; everything else is passed through as-is.
-  // Bounded to 5,000 characters.
   string formula = 1;
   FormulaContext context = 2;
 }
@@ -87,8 +84,8 @@ message ScalarValue {
 // Result of evaluating one formula.
 message EvaluateResult {
   // False ONLY when this node could not evaluate the formula at all — a
-  // syntax error, or input that violated a bound (formula/context too
-  // large). A formula that legitimately evaluates to an Excel error value
+  // syntax error, or malformed input. A formula that legitimately
+  // evaluates to an Excel error value
   // (e.g. 1/0) is still ok=true, with scalar.type=="ERROR" — that is the
   // correct, expected result of evaluating that formula, exactly as Excel
   // would show it in the cell rather than crash.
@@ -104,8 +101,8 @@ message EvaluateResult {
   // Structured message when ok=false.
   string error = 7;
   // Machine-readable code when ok=false: "PARSE_ERROR" (malformed formula
-  // syntax) or "INVALID_INPUT" (formula/context exceeded a bound, or the
-  // context itself was malformed).
+  // syntax) or "INVALID_INPUT" (the formula was empty, or the context
+  // itself was malformed).
   string error_code = 8;
 }
 
@@ -113,7 +110,6 @@ message EvaluateResult {
 // e.g. every formula cell in a sheet — without resending the context or
 // making one round trip per formula.
 message EvaluateBatchRequest {
-  // Bounded to 500 formulas per call.
   repeated string formulas = 1;
   FormulaContext context = 2;
 }

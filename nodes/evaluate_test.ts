@@ -103,12 +103,12 @@ describe('Evaluate', () => {
     expect(result.getScalar()?.getBoolValue()).toBe(true);
   });
 
-  it('rejects a formula exceeding the nesting-depth bound rather than risk a deep-recursion crash', () => {
+  it('handles deeply nested parens without crashing (no nesting-depth cap; the library itself catches the stack overflow as a structured error)', () => {
     const deeplyNested = '('.repeat(500) + '1' + ')'.repeat(500);
     const result = run(deeplyNested);
     expect(result.getOk()).toBe(false);
-    expect(result.getErrorCode()).toBe('INVALID_INPUT');
-    expect(result.getError()).toMatch(/nesting depth/);
+    expect(result.getErrorCode()).toBe('PARSE_ERROR');
+    expect(result.getError()).toMatch(/call stack/i);
   });
 
   it('rejects an empty formula with a structured error instead of crashing', () => {

@@ -2,8 +2,6 @@ import { FormatValueRequest, FormatValueResult } from '../gen/messages_pb';
 import { AxiomContext } from '../gen/axiomContext';
 import { formatWithSSF } from './formula_util';
 
-const MAX_FORMAT_CODE_LENGTH = 500;
-
 /**
  * Render a raw value as Excel would display it under a given number-format
  * code — e.g. format_code "#,##0.00" on 1234.5 -> "1,234.50", "yyyy-mm-dd"
@@ -22,9 +20,6 @@ export function formatValue(ax: AxiomContext, input: FormatValueRequest): Format
     const formatCode = input.getFormatCode();
     if (formatCode.length === 0) {
       throw new Error('format_code must not be empty');
-    }
-    if (formatCode.length > MAX_FORMAT_CODE_LENGTH) {
-      throw new Error(`format_code exceeds maximum length of ${MAX_FORMAT_CODE_LENGTH} characters`);
     }
     const value = input.getValue();
     if (!value) {

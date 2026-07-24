@@ -1,5 +1,5 @@
 name: christiangeorgelucas/spreadsheet-formula-tools
-version: 0.1.0
+version: 0.1.1
 language: typescript
 description: >
     Parse and evaluate Excel/Google-Sheets-style formulas — SUM, VLOOKUP, IF,
